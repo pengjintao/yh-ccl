@@ -1,6 +1,6 @@
 #include <mpi.h>
 // #include <unordered_map>
-#define IPH_RDMA
+#define GLEX_RDMA
 
 class yhccl_contexts;
 class pjtccl_contexts

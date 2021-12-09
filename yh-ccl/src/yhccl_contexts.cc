@@ -24,7 +24,7 @@ using namespace std;
 // #include "glex.h"
 #include "yhccl_contexts.h"
 
-#ifdef IPH_RDMA
+#ifdef GLEX_RDMA
 #include "glex.h"
 
 class yhccl_contexts;
@@ -57,6 +57,7 @@ class yhccl_contexts
 public:
     void init(MPI_Comm comm);
     void distroy();
+    void init_large_msg_allreduce_buffer(int intra_node_rank, int intra_procn);
 
     MPI_Comm Comm_global;
     int global_procn;
@@ -86,9 +87,16 @@ public:
     static bool am_i_init;
     static std::mutex init_mtx;
 
-private:
-    void init_large_msg_allreduce_buffer(int intra_node_rank, int intra_procn);
-#ifdef IPH_RDMA
+    const long long large_msg_allreduce_buff_sz = 1UL << 28;
+    const long long large_msg_allreduce_sendbuff_sz = 1UL << 28;
+    void *larger_msg_allreduce_shareM;
+    void *larger_msg_allreduce_my_sendbuf;
+    void *larger_msg_allreduce_result_start_0;
+    void *larger_msg_allreduce_result_start_1;
+    void *neigbbor_buffers[64];
+
+    yhccl_contexts *_ctx;
+#ifdef GLEX_RDMA
     // int _rdmp_Endpoints_n = 4;
     RDMA_info _rdma_infoV;
 #endif
@@ -96,20 +104,13 @@ private:
 std::mutex yhccl_contexts::init_mtx;
 bool yhccl_contexts::am_i_init = false;
 // #define IPH_NUMA
-// #define IPH_RDMA
+// #define GLEX_RDMA
 
 void pjtccl_contexts::init(MPI_Comm comm)
 {
     _ctxp = new yhccl_contexts();
     _ctxp->init(comm);
 }
-const long long large_msg_allreduce_buff_sz = 1UL << 28;
-const long long large_msg_allreduce_sendbuff_sz = 1UL << 28;
-static void *larger_msg_allreduce_shareM;
-static void *larger_msg_allreduce_my_sendbuf;
-static void *larger_msg_allreduce_result_start_0;
-static void *larger_msg_allreduce_result_start_1;
-static void *neigbbor_buffers[64];
 void yhccl_contexts::init_large_msg_allreduce_buffer(int intra_node_rank, int intra_procn)
 {
     MPI_Barrier(Comm_intra_node);
@@ -230,7 +231,7 @@ void yhccl_contexts::init(MPI_Comm comm)
 
     // if (intra_node_rank == 0)
     {
-#ifdef IPH_RDMA
+#ifdef GLEX_RDMA
         //接下来初始化RDMA
         // RDMA的端口数量
         _rdma_infoV.init_capacity(this);
@@ -311,11 +312,11 @@ void yhccl_contexts::init(MPI_Comm comm)
         }
 #endif
     }
-    puts("finis rdma init");
+    puts("finish rdma init");
     MPI_Barrier(Comm_global);
 }
 
-#ifdef IPH_RDMA
+#ifdef GLEX_RDMA
 void RDMA_info::init_capacity(yhccl_contexts *yhccl_ctx)
 {
     this->intra_zni_epAddrs = new glex_ep_addr_t[yhccl_ctx->intra_zni_procn];
