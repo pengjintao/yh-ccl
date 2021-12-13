@@ -1,30 +1,13 @@
 #define _GNU_SOURCE /* See feature_test_macros(7) */
-#include <iostream>
-#include <sched.h>
-#include <mpi.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <sys/ipc.h>
-#include <pthread.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <mpi.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <mutex>
-#include <vector>
-#include <mutex>
-#include <signal.h>
+
 using namespace std;
 #ifdef IPH_NUMA
 #include <numa.h>
 #endif
 // #include "glex.h"
 #include "yhccl_contexts.h"
-
+#include "yhccl_allreduce.h"
+#include "yhccl_options.h"
 #ifdef GLEX_RDMA
 #include "glex.h"
 class yhccl_contexts;
@@ -59,65 +42,6 @@ public:
 };
 #endif
 
-enum m_leader_options
-{
-    M_LEADER_saturate = 1,
-    M_LEADER_spread
-};
-class yhccl_contexts
-{
-public:
-    void init(MPI_Comm comm);
-    void destroy();
-    void init_large_msg_allreduce_buffer(int intra_node_rank, int intra_procn);
-
-    int mulit_leader_option = M_LEADER_spread;
-
-    MPI_Comm Comm_global;
-    int global_procn;
-    int global_rank;
-
-    MPI_Comm Comm_intra_node;
-    int intra_node_procn;
-    int intra_node_rank;
-
-    MPI_Comm Comm_inter_node;
-    int inter_node_procn;
-    int inter_node_rank;
-
-    int ppzni = 8;
-    int intra_zni_rank;
-    int intra_zni_procn = ppzni;
-    MPI_Comm Comm_intra_zni;
-
-    int ppchip = 3;
-    int intra_chip_rank;
-    int intra_chip_procn = ppchip;
-    MPI_Comm Comm_intra_chip;
-
-    int inter_chip_rank;
-    int inter_chip_procn;
-    MPI_Comm Comm_inter_chip;
-
-    char host_name[MPI_MAX_PROCESSOR_NAME];
-    static bool am_i_init;
-    static std::mutex init_mtx;
-
-    const long long large_msg_allreduce_buff_sz = 1UL << 27;
-    const long long large_msg_allreduce_sendbuff_sz = 1UL << 27;
-    void *larger_msg_allreduce_shareM;
-    void *larger_msg_allreduce_my_sendbuf;
-    void *larger_msg_allreduce_result_start_0;
-    void *larger_msg_allreduce_result_start_1;
-    void *neigbbor_buffers[64];
-    void *temp_buf;
-
-    static yhccl_contexts *_ctx;
-#ifdef GLEX_RDMA
-    // int _rdmp_Endpoints_n = 4;
-    RDMA_info _rdma_infoV;
-#endif
-};
 std::mutex yhccl_contexts::init_mtx;
 yhccl_contexts *yhccl_contexts::_ctx = 0;
 bool yhccl_contexts::am_i_init = false;
@@ -153,12 +77,13 @@ void on_exception_exit(int in)
 
 void yhccl_contexts::init_large_msg_allreduce_buffer(int intra_node_rank, int intra_procn)
 {
-
     temp_buf = malloc(large_msg_allreduce_buff_sz + 8 * inter_node_procn);
     MPI_Barrier(Comm_intra_node);
     char name[100];
     sprintf(name, "pjt-%s", host_name);
-    long long memory_sz = large_msg_allreduce_buff_sz * (intra_procn + 2UL) + global_procn * 8;
+    //节点内规约缓冲区+2个节点间rdma通信缓冲区+ allreduce 规约用的flags
+    long long sz1 = large_msg_allreduce_buff_sz * (intra_procn + 2UL) + global_procn * 8;
+    long long memory_sz = sz1 + sizeof(int) * (1UL << 20);
     int fd = shm_open(name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
     // if(intra_node_rank == 0)
     {
@@ -176,9 +101,10 @@ void yhccl_contexts::init_large_msg_allreduce_buffer(int intra_node_rank, int in
     larger_msg_allreduce_result_start_1 = larger_msg_allreduce_result_start_0 + large_msg_allreduce_sendbuff_sz;
     memset(larger_msg_allreduce_result_start_0, 0, large_msg_allreduce_buff_sz);
     memset(larger_msg_allreduce_result_start_1, 0, large_msg_allreduce_buff_sz);
+    allreduce_flags = (volatile int *)(larger_msg_allreduce_shareM + sz1);
     for (int i = 0; i < intra_procn; i++)
     {
-        neigbbor_buffers[i] = larger_msg_allreduce_shareM + (long long)large_msg_allreduce_buff_sz * i;
+        neigbbor_buffers[i] = (volatile int *)(larger_msg_allreduce_shareM + (long long)large_msg_allreduce_buff_sz * i);
     }
     MPI_Barrier(Comm_intra_node);
 }
@@ -269,6 +195,8 @@ void yhccl_contexts::init(MPI_Comm comm)
     //     fflush(stdout);
     // }
     //接下来初始化节点内共享内存
+    //设置节点间通信子的leader数量。
+    pjt_leadern = min(pjt_leadern, intra_node_procn);
     init_large_msg_allreduce_buffer(intra_node_rank, intra_node_procn);
     MPI_Barrier(Comm_global);
 
@@ -293,10 +221,11 @@ void yhccl_contexts::destroy()
     _rdma_infoV.free();
 #endif
     free(temp_buf);
+    // delete allreduce_flags;
 }
+#ifdef GLEX_RDMA
 void RDMA_info::init(yhccl_contexts *yhccl_ctx1)
 {
-#ifdef GLEX_RDMA
 
     yhccl_ctx = yhccl_ctx1;
     this->intra_zni_epAddrs = new glex_ep_addr_t[yhccl_ctx->intra_zni_procn];
@@ -406,9 +335,7 @@ void RDMA_info::init(yhccl_contexts *yhccl_ctx1)
     }
     signal(SIGINT, on_exception_exit);
     signal(SIGSEGV, on_exception_exit);
-#endif
 }
-
 void RDMA_info::free()
 {
     if (glex_deregister_mem(ep, tmp_mh) != GLEX_SUCCESS)
@@ -448,6 +375,7 @@ void RDMA_info::free()
         puts("finish rdma free");
     fflush(stdout);
 }
+#endif
 
 template <typename T>
 void yhccl_sum_op(void *invec, void *inoutvec, int *len,

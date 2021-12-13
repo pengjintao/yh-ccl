@@ -2,7 +2,7 @@
 
 module add cmake/3.20.2
 export LD_LIBRARY_PATH=/BIGDATA1/nudt_jliu_1/pjt/yh-coll/GLEX_Coll_lib:$LD_LIBRARY_PATH
-export  GLEX_COLL_PPN=4
+export  GLEX_COLL_PPN=24
 export  procName=allreduce
 
 
@@ -17,8 +17,8 @@ MODE=1
 case $MODE in
     1   )
         echo " allreduce Testing"
-        export  GLEX_COLL_NODEN_MAX=8
-        export  GLEX_COLL_NODEN_MIN=8
+        export  GLEX_COLL_NODEN_MAX=2
+        export  GLEX_COLL_NODEN_MIN=2
         wait
         #-x `cat ./node-screening/excludeth2` 
         yhbatch  -N $GLEX_COLL_NODEN_MAX --time=0-0:20:20  ./batch-allreduce.sh
