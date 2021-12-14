@@ -502,7 +502,7 @@ void yhccl_allreduce(void *datasend, void *datarecv, int count, MPI_Datatype mpi
         int elem_sz = -1;
         MPI_Type_size(mpitype, &elem_sz);
         yhccl_op reduce_op = operation_switch(mpitype, mpi_op, reducefp);
-        std::thread th = std::thread(inter_node_allreduce_thread_main);
+        // std::thread th = std::thread(inter_node_allreduce_thread_main);
         //更具消息大小和节点数量进行规约;目前主要着眼于大消息
         //针对每节点多个进程的hierarchy mulit-leader allreduce.
         //十分适用于深度学习应用
@@ -628,6 +628,6 @@ void yhccl_allreduce(void *datasend, void *datarecv, int count, MPI_Datatype mpi
         //     memcpy(datarecv, ctx->larger_msg_allreduce_result_start_0, count * elem_sz);
         //     MPI_Barrier(ctx->Comm_intra_node);
         // }
-        std::thread th = std::thread();
+        // std::thread th = std::thread();
     }
 }

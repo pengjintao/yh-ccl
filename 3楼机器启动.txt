@@ -1,0 +1,49 @@
+export PATH=/root/pjt/yh-ccl/yh-ccl/cmake-3.22.1-linux-x86_64/bin:$PATH
+
+export LIBDIR=/opt/mvapich2-x/gnu4.8.5/mofed4.5/advanced-xpmem/mpirun/
+export SHARPDIR=/opt/mellanox/sharp/lib/:/opt/mellanox/sharp/lib/
+export PATH=$LIBDIR/bin:$PATH
+export LD_LIBRARY_PATH=$LIBDIR/lib64:$SHARPDIR:$LD_LIBRARY_PATH
+export LIBRARY_PATH=$LIBDIR/lib64:$SHARPDIR:$LIBRARY_PATH
+export C_INCLUDE_PATH=$LIBDIR/include:$C_INCLUDE_PATH
+export CPLUS_INCLUDE_PATH=$LIBDIR/include:$CPLUS_INCLUDE_PATH
+
+:/root/ib_share/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.4-1.0.3.0-redhat7.4-x86_64/sharp/lib/:/usr/lib64/:/opt/mellanox/sharp/lib/
+export LIBDIR=/usr/local/mvapich2
+export PATH=$LIBDIR/bin:$PATH
+export LD_LIBRARY_PATH=$LIBDIR/lib:$LD_LIBRARY_PATH
+export LIBRARY_PATH=$LIBDIR/lib:$LIBRARY_PATH
+
+
+rpm -Uvh  ./mvapich2-x-advanced-xpmem-mofed4.5-gnu4.8.5-2.3-1.el7.x86_64.rpm
+	libibcm.so.1	rpm -Uvh /data/LCS/Packages/libibcm-13-7.el7.x86_64.rpm
+		--rdma-core	rpm -Uvh /data/LCS/Packages/rdma-core-13-7.el7.x86_64.rpm
+		--libibverbs 	rpm -Uvh /data/LCS/Packages/libibverbs-13-7.el7.x86_64.rpm
+	libsharp_coll.so.4
+
+
+
+[root@cn9 osu_benchmarks] #make clean
+test -z "osu_alltoallv osu_allgatherv osu_scatterv osu_gatherv osu_reduce_scatter osu_allgather osu_barrier osu_reduce osu_allreduce osu_gather osu_scatter osu_alltoall osu_bcast osu_bibw osu_bw osu_latency osu_mbw_mr osu_multi_lat osu_acc_latency osu_get_bw osu_get_latency osu_latency_mt osu_put_bibw osu_put_bw osu_put_latency osu_passive_put_latency osu_passive_put_bw osu_passive_get_latency osu_passive_get_bw osu_passive_acc_latency" || rm -f osu_alltoallv osu_allgatherv osu_scatterv osu_gatherv osu_reduce_scatter osu_allgather osu_barrier osu_reduce osu_allreduce osu_gather osu_scatter osu_alltoall osu_bcast osu_bibw osu_bw osu_latency osu_mbw_mr osu_multi_lat osu_acc_latency osu_get_bw osu_get_latency osu_latency_mt osu_put_bibw osu_put_bw osu_put_latency osu_passive_put_latency osu_passive_put_bw osu_passive_get_latency osu_passive_get_bw osu_passive_acc_latency
+rm -f *.o
+[root@cn9 osu_benchmarks] #make
+mpicc -DPACKAGE_NAME=\"OSU-Micro-Benchmarks\" -DPACKAGE_TARNAME=\"osu-micro-benchmarks\" -DPACKAGE_VERSION=\"3.6\" -DPACKAGE_STRING=\"OSU-Micro-Benchmarks\ 3.6\" -DPACKAGE_BUGREPORT=\"mvapich-discuss@cse.ohio-state.edu\" -DPACKAGE_URL=\"\" -DPACKAGE=\"osu-micro-benchmarks\" -DVERSION=\"3.6\" -DSTDC_HEADERS=1 -DHAVE_SYS_TYPES_H=1 -DHAVE_SYS_STAT_H=1 -DHAVE_STDLIB_H=1 -DHAVE_STRING_H=1 -DHAVE_MEMORY_H=1 -DHAVE_STRINGS_H=1 -DHAVE_INTTYPES_H=1 -DHAVE_STDINT_H=1 -DHAVE_UNISTD_H=1 -DHAVE_STDLIB_H=1 -DHAVE_STRING_H=1 -DHAVE_SYS_TIME_H=1 -DHAVE_UNISTD_H=1 -DHAVE_GETPAGESIZE=1 -DHAVE_GETTIMEOFDAY=1 -DHAVE_MEMSET=1 -DHAVE_SQRT=1 -DFIELD_WIDTH=18 -DFLOAT_PRECISION=2 -I.     -g -O2 -MT osu_alltoallv.o -MD -MP -MF .deps/osu_alltoallv.Tpo -c -o osu_alltoallv.o osu_alltoallv.c
+mv -f .deps/osu_alltoallv.Tpo .deps/osu_alltoallv.Po
+mpicc  -g -O2 -Wl,-rpath=/usr/local/lib64 -Wl,-rpath=/usr/local/lib  -o osu_alltoallv osu_alltoallv.o  -lm
+/usr/bin/ld: warning: libsharp_coll.so.4, needed by /opt/mvapich2-x/gnu4.8.5/mofed4.5/advanced-xpmem/mpirun/lib64/libmpi.so, not found (try using -rpath or -rpath-link)
+/usr/bin/ld: warning: libibcm.so.1, needed by /opt/mvapich2-x/gnu4.8.5/mofed4.5/advanced-xpmem/mpirun/lib64/libmpi.so, not found (try using -rpath or -rpath-link)
+/opt/mvapich2-x/gnu4.8.5/mofed4.5/advanced-xpmem/mpirun/lib64/libmpi.so: undefined reference to `ibv_reg_xrc_rcv_qp@IBVERBS_1.1'
+/opt/mvapich2-x/gnu4.8.5/mofed4.5/advanced-xpmem/mpirun/lib64/libmpi.so: undefined reference to `ibv_modify_xrc_rcv_qp@IBVERBS_1.1'
+/opt/mvapich2-x/gnu4.8.5/mofed4.5/advanced-xpmem/mpirun/lib64/libmpi.so: undefined reference to `ibv_open_xrc_domain@IBVERBS_1.1'
+/opt/mvapich2-x/gnu4.8.5/mofed4.5/advanced-xpmem/mpirun/lib64/libmpi.so: undefined reference to `ibv_unreg_xrc_rcv_qp@IBVERBS_1.1'
+/opt/mvapich2-x/gnu4.8.5/mofed4.5/advanced-xpmem/mpirun/lib64/libmpi.so: undefined reference to `ibv_create_xrc_rcv_qp@IBVERBS_1.1'
+/opt/mvapich2-x/gnu4.8.5/mofed4.5/advanced-xpmem/mpirun/lib64/libmpi.so: undefined reference to `ibv_create_xrc_srq@IBVERBS_1.1'
+/opt/mvapich2-x/gnu4.8.5/mofed4.5/advanced-xpmem/mpirun/lib64/libmpi.so: undefined reference to `ibv_close_xrc_domain@IBVERBS_1.1'
+collect2: error: ld returned 1 exit status
+make: *** [osu_alltoallv] Error 1
+[root@cn9 osu_benchmarks] #
+
+
+
+
+

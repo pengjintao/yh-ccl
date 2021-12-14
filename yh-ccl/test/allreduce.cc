@@ -29,7 +29,7 @@ int main()
         if (ccl_ctx._ctxp->global_rank == 0)
             printf("---------------------l=%d-----------------------------------------------\n", l);
         fflush(stdout);
-        for (int sz = 20; sz <= 24; sz++)
+        for (int sz = 12; sz <= 24; sz++)
         {
             ccl_ctx._ctxp->_opt.intra_node_synchronize = Atomic_as_sync;
             // MPIBarrier_as_sync;
@@ -101,7 +101,7 @@ int main()
                 MPI_Reduce(&totalT, &Tim, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
                 if (allreduce_rank == 0)
                 {
-                    printf("PJT: count= %d time= %lf throughput=%lf GB/s\n", count, Tim, (count * sizeof(float) / (1.0E9 * Tim)) * allreduce_procn);
+                    printf("PJT: size= %d time= %lf throughput=%lf GB/s\n", count * sizeof(float), Tim * 1e6, (count * sizeof(float) / (1.0E9 * Tim)) * allreduce_procn);
                 }
             }
             if (0)
@@ -122,7 +122,7 @@ int main()
                 MPI_Reduce(&totalT, &Tim, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
                 if (allreduce_rank == 0)
                 {
-                    printf("MPI: count= %d time= %lf throughput=%lf GB/s\n", count, Tim, (count * sizeof(float) / (1.0E9 * Tim)) * allreduce_procn);
+                    printf("MPI: size= %d time= %lf throughput=%lf GB/s\n", count * sizeof(float), Tim * 1e6, (count * sizeof(float) / (1.0E9 * Tim)) * allreduce_procn);
                 }
                 fflush(stdout);
             }
