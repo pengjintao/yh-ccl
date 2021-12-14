@@ -24,17 +24,23 @@ int main()
     MPI_Barrier(MPI_COMM_WORLD);
     float *sendbuf = new float[1 << 24];
     float *recvbuf = new float[1 << 24];
-    for (int l = 12; l < 13; l++)
+    for (int l = 0; l < 2; l++)
     {
         if (ccl_ctx._ctxp->global_rank == 0)
             printf("---------------------l=%d-----------------------------------------------\n", l);
         fflush(stdout);
-        for (int sz = 12; sz <= 24; sz++)
+        for (int sz = 20; sz <= 24; sz++)
         {
             ccl_ctx._ctxp->_opt.intra_node_synchronize = Atomic_as_sync;
-            ccl_ctx._ctxp->_opt.proc_reduce_unit = (1 << 14);
-            ccl_ctx._ctxp->_opt.reduce_byte_unit = (1 << 12);
-            ccl_ctx._ctxp->_opt.mulit_leader_algorithm = PIPELINED_DPML;
+            // MPIBarrier_as_sync;
+            // Atomic_as_sync;
+            ccl_ctx._ctxp->_opt.intra_node_reduce_byte_unit = (1 << 12);
+            ccl_ctx._ctxp->_opt.intra_node_proc_reduce_unit = (1 << 16);
+            ccl_ctx._ctxp->_opt.inter_node_slice_num = 4;
+            if (l == 0)
+                ccl_ctx._ctxp->_opt.mulit_leader_algorithm = DPML;
+            if (l == 1)
+                ccl_ctx._ctxp->_opt.mulit_leader_algorithm = PIPELINED_DPML;
             ccl_ctx._ctxp->_opt.intra_node_reduce_type = MemoryEfficient;
             // pipelined_dpml_cache_efficient;
             //  if (l == 0)
@@ -44,7 +50,7 @@ int main()
 
             int count = 1 << sz;
             //正确性测试
-            // if (0)
+            if (0)
             {
                 for (int loop = 0; loop < 10; loop++)
                 {
@@ -53,7 +59,7 @@ int main()
                         sendbuf[i] = i & and_v;
                     // puts("54");
                     // sendbuf[i] = 1.0;
-                    usleep((allreduce_rank % 100) * 500);
+                    // usleep((allreduce_rank % 100) * 500);
                     // iph_topology_aware_allreduce(sendbuf, recvbuf, count);
                     yhccl_allreduce(sendbuf, recvbuf, count, MPI_FLOAT, MPI_SUM, 0);
                     for (int i = 0; i < count; i++)

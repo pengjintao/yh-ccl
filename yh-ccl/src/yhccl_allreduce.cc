@@ -3,6 +3,10 @@
 #include <omp.h>
 #include <algorithm>
 #include <mpi.h>
+#include <thread>
+#define Intra_node_reduce
+#define Inter_node_allreduce
+
 #define memory_fence() asm volatile("mfence" :: \
                                         : "memory")
 #define read_fence() asm volatile("lfence" :: \
@@ -30,10 +34,9 @@ void Reduce_intra_node(void *sendbuf, int count, int elem_sz, yhccl_op op, int *
             counts[i] = count - starts[i];
         }
     }
-    int slice_count = ctx->_opt.proc_reduce_unit / elem_sz;
+    int slice_count = ctx->_opt.intra_node_proc_reduce_unit / elem_sz;
     // if (0)
     int slice_start = 0;
-    // if (0)
     for (int ss = 0; ss < count; ss += slice_count * ctx->intra_node_procn)
     {
         for (int i = 0; i < ctx->intra_node_procn; i++)
@@ -52,7 +55,7 @@ void Reduce_intra_node(void *sendbuf, int count, int elem_sz, yhccl_op op, int *
                         ;
                     memory_fence();
                 }
-
+#ifdef Intra_node_reduce
                 if (i == 0)
                 {
                     memcpy(dest, source, countl * elem_sz);
@@ -61,6 +64,7 @@ void Reduce_intra_node(void *sendbuf, int count, int elem_sz, yhccl_op op, int *
                 {
                     op(source, dest, &countl, 0);
                 }
+#endif
                 if (ctx->_opt.intra_node_synchronize == Atomic_as_sync)
                 {
                     store_fence();
@@ -129,7 +133,8 @@ void pipelined_dpml_memory_efficient(void *sendbuf, int count, int elem_sz,
     int slice_c = count / ctx->intra_node_procn;
     int remain = count % ctx->intra_node_procn;
     starts[0] = 0;
-    static int slice_c1;
+    void *slice_addr_c1 = 0;
+    int count_c1 = 0;
 
     for (int i = 1; i < ctx->intra_node_procn; i++)
     {
@@ -143,13 +148,13 @@ void pipelined_dpml_memory_efficient(void *sendbuf, int count, int elem_sz,
             counts[i] = count - starts[i];
         }
     }
-    int slice_count = ctx->_opt.proc_reduce_unit / elem_sz;
+    int slice_count = ctx->_opt.intra_node_proc_reduce_unit / elem_sz;
     // if (0)
     int slice_start = 0;
-    int slice_max = (ctx->_opt.inter_node_slice_unit) / (ctx->_opt.proc_reduce_unit);
+    int slice_max = (ctx->_opt.inter_node_slice_num);
     // if (0)
-    MPI_Request reqs[1 + count / (ctx->_opt.inter_node_slice_unit)];
-    MPI_Status status[1 + count / (ctx->_opt.inter_node_slice_unit)];
+    MPI_Request reqs[1 + count / slice_count];
+    MPI_Status status[1 + slice_max * count / slice_count];
     int reqn = 0;
     for (int ss = 0; ss < count; ss += slice_count * ctx->intra_node_procn)
     {
@@ -162,14 +167,14 @@ void pipelined_dpml_memory_efficient(void *sendbuf, int count, int elem_sz,
             {
                 void *dest = ctx->larger_msg_allreduce_result_start_0 + sliceStart * elem_sz;
                 void *source = sendbuf + sliceStart * elem_sz;
-
+                // printf("%d ctx->allreduce_flags[%d + %d] = %d\n", ctx->global_rank, slice_start, slice_lid, ctx->allreduce_flags[slice_start + slice_lid]);
                 if (ctx->_opt.intra_node_synchronize == Atomic_as_sync)
                 {
                     while (ctx->allreduce_flags[slice_start + slice_lid] != i)
                         ;
                     memory_fence();
                 }
-
+#ifdef Intra_node_reduce
                 if (i == 0)
                 {
                     memcpy(dest, source, countl * elem_sz);
@@ -178,6 +183,7 @@ void pipelined_dpml_memory_efficient(void *sendbuf, int count, int elem_sz,
                 {
                     op(source, dest, &countl, 0);
                 }
+#endif
                 if (ctx->_opt.intra_node_synchronize == Atomic_as_sync)
                 {
                     store_fence();
@@ -188,6 +194,8 @@ void pipelined_dpml_memory_efficient(void *sendbuf, int count, int elem_sz,
             if (ctx->_opt.intra_node_synchronize == MPIBarrier_as_sync)
                 MPI_Barrier(ctx->Comm_intra_node);
         }
+        // puts("155");
+        // fflush(stdout);
         // if (0)
         for (int slid = 0; slid < ctx->intra_node_procn; slid++)
         {
@@ -200,28 +208,30 @@ void pipelined_dpml_memory_efficient(void *sendbuf, int count, int elem_sz,
             {
                 while (!__sync_bool_compare_and_swap(&(ctx->allreduce_flags[intra_reduce_slice_id]), ctx->intra_node_procn, 0))
                     ;
-                if (ctx->_opt.inter_node_slice_unit < ctx->_opt.proc_reduce_unit)
+                // if (ctx->inter_node_procn > 1)
+                //     MPI_Iallreduce(MPI_IN_PLACE, ctx->larger_msg_allreduce_result_start_0 + sliceStart * elem_sz,
+                //                    countl, mpitype, mpi_op, ctx->Comm_inter_node, &(reqs[reqn++]));
+                // std::cout << ctx->global_rank << " intra_reduce_slice_id= " << intra_reduce_slice_id << std::endl;
+                // fflush(stdout);
+                if (intra_reduce_slice_id % slice_max == 0)
                 {
-                    std::cout << "错误，节点间分片必须大于节点内分片" << std::endl;
+                    //准备下一个消息
+                    void *addr = ctx->larger_msg_allreduce_result_start_0 + sliceStart * elem_sz;
+                    slice_addr_c1 = addr;
+                    count_c1 = 0;
+                    // std::cout << ctx->global_rank << " " << count_c1 << " " << count << " " << sliceStart << " intra_reduce_slice_id= " << intra_reduce_slice_id << std::endl;
                 }
-                else
+                count_c1 += countl;
+                if (intra_reduce_slice_id % slice_max == slice_max - 1 || sliceStart + slice_count >= count)
                 {
-                    if (ctx->inter_node_procn > 1)
-                        MPI_Iallreduce(MPI_IN_PLACE, ctx->larger_msg_allreduce_result_start_0 + sliceStart * elem_sz,
-                                       countl, mpitype, mpi_op, ctx->Comm_inter_node, &(reqs[reqn++]));
 
-                    // slice_c1++;
-                    // if (slice_c1 == slice_max)
-                    // {
-                    //     // void * addr =
-                    //     int start_slice_id = intra_reduce_slice_id - slice_c1 + 1;
-                    //     void *addr = ctx->larger_msg_allreduce_result_start_0 + start_slice_id * elem_sz;
-                    //     int c = (slice_c1 - 1) * slice_count + std::min(slice_count, count - (ss + slice_count * intra_reduce_slice_id));
-                    //     slice_c1 = 0;
-                    //     if (ctx->inter_node_procn > 1)
-                    //         MPI_Iallreduce(MPI_IN_PLACE, addr, c, mpitype, mpi_op, ctx->Comm_inter_node, &(reqs[reqn++]));
-                    // }
-                    //
+                    // for (int i = 0; i < count_c1; i++)
+                    //     ((float *)slice_addr_c1)[i] *= 2.0;
+                    // std::cout << "allreduce: " << ctx->global_rank << " " << (unsigned long long)slice_addr_c1 - (unsigned long long)ctx->larger_msg_allreduce_result_start_0 << " count= " << count_c1 << std::endl;
+#ifdef Inter_node_allreduce
+                    if (ctx->inter_node_procn > 1)
+                        MPI_Iallreduce(MPI_IN_PLACE, slice_addr_c1, count_c1, mpitype, mpi_op, ctx->Comm_inter_node, &(reqs[reqn++]));
+#endif
                 }
             }
         }
@@ -230,6 +240,7 @@ void pipelined_dpml_memory_efficient(void *sendbuf, int count, int elem_sz,
     }
     if (ctx->inter_node_procn > 1)
         MPI_Waitall(reqn, reqs, status);
+    // exit(0);
 }
 void Reduce_intra_node_onSHM(int count, int elem_sz, yhccl_op op, int *counts, int *starts)
 {
@@ -252,7 +263,7 @@ void Reduce_intra_node_onSHM(int count, int elem_sz, yhccl_op op, int *counts, i
 
     int my_count = counts[ctx->intra_node_rank];
     int my_start = starts[ctx->intra_node_rank];
-    int slice_sz = ctx->_opt.reduce_byte_unit;
+    int slice_sz = ctx->_opt.intra_node_reduce_byte_unit;
     int slice_ct = slice_sz / elem_sz;
     int sliceid = 0;
     for (int ss = 0; ss < count; ss += slice_ct)
@@ -301,7 +312,7 @@ void pipelined_dpml_cache_efficient(int count, int elem_sz, yhccl_op op, int *co
 
     int my_count = counts[ctx->intra_node_rank];
     int my_start = starts[ctx->intra_node_rank];
-    int slice_sz = ctx->_opt.proc_reduce_unit;
+    int slice_sz = ctx->_opt.intra_node_proc_reduce_unit;
     // if (elem_sz < 32768)131072
     // {
     //     slice_sz = 8192;
@@ -468,6 +479,11 @@ void *M_leader_reduce_scatter_ring(void *sendbuf, int start, int elem_sz, int co
         }
     }
 }
+
+void inter_node_allreduce_thread_main()
+{
+    //基于点对点并发队列，接收从主线程发送而来的缓冲区，信息
+}
 void yhccl_allreduce(void *datasend, void *datarecv, int count, MPI_Datatype mpitype, MPI_Op mpi_op, yhccl_op reducefp = 0)
 {
     yhccl_contexts *ctx = yhccl_contexts::_ctx;
@@ -486,6 +502,7 @@ void yhccl_allreduce(void *datasend, void *datarecv, int count, MPI_Datatype mpi
         int elem_sz = -1;
         MPI_Type_size(mpitype, &elem_sz);
         yhccl_op reduce_op = operation_switch(mpitype, mpi_op, reducefp);
+        std::thread th = std::thread(inter_node_allreduce_thread_main);
         //更具消息大小和节点数量进行规约;目前主要着眼于大消息
         //针对每节点多个进程的hierarchy mulit-leader allreduce.
         //十分适用于深度学习应用
@@ -510,6 +527,7 @@ void yhccl_allreduce(void *datasend, void *datarecv, int count, MPI_Datatype mpi
                     Reduce_intra_node_onSHM(count, elem_sz, reduce_op, counts_intra_node, starts_intra_node);
                     break;
                 case MemoryEfficient:
+                    // puts("516");
                     Reduce_intra_node(datasend, count, elem_sz, reduce_op, counts_intra_node, starts_intra_node);
                     MPI_Barrier(ctx->Comm_intra_node);
                     break;
@@ -521,10 +539,21 @@ void yhccl_allreduce(void *datasend, void *datarecv, int count, MPI_Datatype mpi
             int countl = counts_intra_node[ctx->intra_node_rank];
             if (ctx->inter_node_procn > 0)
             {
-                MPI_Allreduce(MPI_IN_PLACE, sendb, countl, mpitype, mpi_op, ctx->Comm_inter_node);
+                MPI_Request req;
+                MPI_Status status;
+// MPI_Allreduce(MPI_IN_PLACE, sendb, countl, mpitype, mpi_op, ctx->Comm_inter_node);
+#ifdef Inter_node_allreduce
+                // while (1)
+                {
+
+                    MPI_Allreduce(MPI_IN_PLACE, sendb, countl, mpitype, mpi_op, ctx->Comm_inter_node);
+                    // MPI_Iallreduce(MPI_IN_PLACE, sendb, countl, mpitype, mpi_op, ctx->Comm_inter_node, &req);
+                    // MPI_Wait(&req, &status);
+                }
+#endif
                 MPI_Barrier(ctx->Comm_intra_node);
             }
-            memcpy(datarecv, ctx->larger_msg_allreduce_result_start_0, count * elem_sz);
+            // memcpy(datarecv, ctx->larger_msg_allreduce_result_start_0, count * elem_sz);
             MPI_Barrier(ctx->Comm_intra_node);
             break;
         }
@@ -544,7 +573,7 @@ void yhccl_allreduce(void *datasend, void *datarecv, int count, MPI_Datatype mpi
             default:
                 break;
             }
-            memcpy(datarecv, ctx->larger_msg_allreduce_result_start_0, count * elem_sz);
+            // memcpy(datarecv, ctx->larger_msg_allreduce_result_start_0, count * elem_sz);
             MPI_Barrier(ctx->Comm_intra_node);
             break;
         }
@@ -599,5 +628,6 @@ void yhccl_allreduce(void *datasend, void *datarecv, int count, MPI_Datatype mpi
         //     memcpy(datarecv, ctx->larger_msg_allreduce_result_start_0, count * elem_sz);
         //     MPI_Barrier(ctx->Comm_intra_node);
         // }
+        std::thread th = std::thread();
     }
 }

@@ -2,7 +2,7 @@
 
 module add cmake/3.20.2
 export LD_LIBRARY_PATH=/BIGDATA1/nudt_jliu_1/pjt/yh-coll/GLEX_Coll_lib:$LD_LIBRARY_PATH
-export  GLEX_COLL_PPN=24
+export  GLEX_COLL_PPN=2
 export  procName=allreduce
 
 

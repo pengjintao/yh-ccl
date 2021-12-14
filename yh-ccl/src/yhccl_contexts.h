@@ -81,7 +81,7 @@ public:
     void *neigbbor_buffers[64];
     void *temp_buf;
     // allreduce_flags 用于控制节点内每一段规约结果是否就绪。
-    //每一段的长度由具体算法决定。通常为proc_reduce_unit大小，
+    //每一段的长度由具体算法决定。通常为intra_node_proc_reduce_unit大小，
     //每次使用完要还原。
     volatile int *allreduce_flags;
     allreduce_option _opt;

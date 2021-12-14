@@ -21,9 +21,9 @@ enum intra_node_sync_type
 class allreduce_option
 {
 public:
-    int reduce_byte_unit = 2048;
-    int proc_reduce_unit = 8192;
-    int inter_node_slice_unit = 8192;
+    int intra_node_reduce_byte_unit = (1 << 12);
+    int intra_node_proc_reduce_unit = (1 << 14);
+    int inter_node_slice_num = 3;
     m_leader_options mulit_leader_algorithm = DPML;
     intra_reduce_types intra_node_reduce_type = MemoryEfficient;
     intra_node_sync_type intra_node_synchronize = Atomic_as_sync;

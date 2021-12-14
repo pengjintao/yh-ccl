@@ -102,6 +102,7 @@ void yhccl_contexts::init_large_msg_allreduce_buffer(int intra_node_rank, int in
     memset(larger_msg_allreduce_result_start_0, 0, large_msg_allreduce_buff_sz);
     memset(larger_msg_allreduce_result_start_1, 0, large_msg_allreduce_buff_sz);
     allreduce_flags = (volatile int *)(larger_msg_allreduce_shareM + sz1);
+    memset(allreduce_flags, 0, sizeof(int) * (1UL << 20));
     for (int i = 0; i < intra_procn; i++)
     {
         neigbbor_buffers[i] = (volatile int *)(larger_msg_allreduce_shareM + (long long)large_msg_allreduce_buff_sz * i);
