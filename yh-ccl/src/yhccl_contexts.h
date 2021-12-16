@@ -21,6 +21,7 @@
 #include <signal.h>
 #include "yhccl_allreduce.h"
 #include "yhccl_options.h"
+
 // #include <unordered_map>
 // #define GLEX_RDMA
 
@@ -67,6 +68,8 @@ public:
     int inter_chip_rank;
     int inter_chip_procn;
     MPI_Comm Comm_inter_chip;
+    unsigned int processor_per_node;
+    bool using_multi_thread_communication;
 
     char host_name[MPI_MAX_PROCESSOR_NAME];
     static bool am_i_init;
@@ -81,7 +84,7 @@ public:
     void *neigbbor_buffers[64];
     void *temp_buf;
     // allreduce_flags 用于控制节点内每一段规约结果是否就绪。
-    //每一段的长度由具体算法决定。通常为intra_node_proc_reduce_unit大小，
+    //每一段的长度由具体算法决定。通常为intra_node_proc_reduce_bcast_unit大小，
     //每次使用完要还原。
     volatile int *allreduce_flags;
     allreduce_option _opt;

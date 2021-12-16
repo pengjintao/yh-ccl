@@ -1,5 +1,8 @@
 #define _GNU_SOURCE /* See feature_test_macros(7) */
 
+#include <sched.h>
+#include <unistd.h>
+
 using namespace std;
 #ifdef IPH_NUMA
 #include <numa.h>
@@ -8,6 +11,7 @@ using namespace std;
 #include "yhccl_contexts.h"
 #include "yhccl_allreduce.h"
 #include "yhccl_options.h"
+#include "yhccl_communicator.h"
 #ifdef GLEX_RDMA
 #include "glex.h"
 class yhccl_contexts;
@@ -197,6 +201,19 @@ void yhccl_contexts::init(MPI_Comm comm)
     // }
     //接下来初始化节点内共享内存
     //设置节点间通信子的leader数量。
+    {
+        cpu_set_t new_mask;
+        cpu_set_t was_mask;
+        int tid = yhccl_contexts::_ctx->intra_node_rank;
+        CPU_ZERO(&new_mask);
+        CPU_SET(tid, &new_mask);
+
+        if (sched_setaffinity(0, sizeof(new_mask), &new_mask) == -1)
+        {
+            printf("Error: sched_setaffinity(%d, sizeof(new_mask), &new_mask)\n", tid);
+        }
+        // printf("tid=%d new_mask=%08X was_mask=%08X\n", tid, *(unsigned int *)(&new_mask), *(unsigned int *)(&was_mask));
+    }
     pjt_leadern = min(pjt_leadern, intra_node_procn);
     init_large_msg_allreduce_buffer(intra_node_rank, intra_node_procn);
     MPI_Barrier(Comm_global);
@@ -210,6 +227,15 @@ void yhccl_contexts::init(MPI_Comm comm)
 
 #endif
     }
+
+    processor_per_node = sysconf(_SC_NPROCESSORS_ONLN);
+    if (intra_node_procn < processor_per_node / 2)
+        using_multi_thread_communication = true;
+    else
+        using_multi_thread_communication = false;
+    if (using_multi_thread_communication)
+        yhccl_communicator::start();
+    init_allreduce_algorithm();
     if (global_rank == 0)
         puts("finish rdma init");
     MPI_Barrier(Comm_global);
@@ -217,11 +243,15 @@ void yhccl_contexts::init(MPI_Comm comm)
 
 void yhccl_contexts::destroy()
 {
+    destroy_allreduce_algorithm();
     //销毁注册的内存
 #ifdef GLEX_RDMA
     _rdma_infoV.free();
 #endif
     free(temp_buf);
+    // A::start();
+    if (using_multi_thread_communication)
+        yhccl_communicator::destroy(0);
     // delete allreduce_flags;
 }
 #ifdef GLEX_RDMA

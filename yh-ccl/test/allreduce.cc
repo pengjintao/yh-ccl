@@ -24,23 +24,29 @@ int main()
     MPI_Barrier(MPI_COMM_WORLD);
     float *sendbuf = new float[1 << 24];
     float *recvbuf = new float[1 << 24];
-    for (int l = 0; l < 2; l++)
+
+    for (int l = 14; l < 22; l += 1)
     {
         if (ccl_ctx._ctxp->global_rank == 0)
             printf("---------------------l=%d-----------------------------------------------\n", l);
         fflush(stdout);
-        for (int sz = 12; sz <= 24; sz++)
+        for (int sz = 15; sz <= 23; sz++)
         {
-            ccl_ctx._ctxp->_opt.intra_node_synchronize = Atomic_as_sync;
+            ccl_ctx._ctxp->_opt.intra_node_sync_type = Atomic_as_sync;
             // MPIBarrier_as_sync;
             // Atomic_as_sync;
             ccl_ctx._ctxp->_opt.intra_node_reduce_byte_unit = (1 << 12);
-            ccl_ctx._ctxp->_opt.intra_node_proc_reduce_unit = (1 << 16);
+            ccl_ctx._ctxp->_opt.intra_node_proc_reduce_bcast_unit = (1 << l);
             ccl_ctx._ctxp->_opt.inter_node_slice_num = 4;
-            if (l == 0)
-                ccl_ctx._ctxp->_opt.mulit_leader_algorithm = DPML;
-            if (l == 1)
-                ccl_ctx._ctxp->_opt.mulit_leader_algorithm = PIPELINED_DPML;
+            ccl_ctx._ctxp->_opt.mulit_leader_algorithm = PIPELINED_DPML;
+            ccl_ctx._ctxp->_opt.intra_node_bcast_type = CacheEfficientBcast;
+            ccl_ctx._ctxp->_opt.inter_node_allreduce_type = MPIALLREDUCE;
+            // CacheEfficientBcast;
+            // if (l == 0)
+            //     ccl_ctx._ctxp->_opt.inter_node_allreduce_type = MPIALLREDUCE;
+            // if (l == 1)
+            //     ccl_ctx._ctxp->_opt.inter_node_allreduce_type = THREAD_MPIALLREDUCE_AUTO;
+
             ccl_ctx._ctxp->_opt.intra_node_reduce_type = MemoryEfficient;
             // pipelined_dpml_cache_efficient;
             //  if (l == 0)
@@ -57,7 +63,6 @@ int main()
                     int and_v = 1;
                     for (int i = 0; i < count; i++)
                         sendbuf[i] = i & and_v;
-                    // puts("54");
                     // sendbuf[i] = 1.0;
                     // usleep((allreduce_rank % 100) * 500);
                     // iph_topology_aware_allreduce(sendbuf, recvbuf, count);
@@ -65,9 +70,9 @@ int main()
                     for (int i = 0; i < count; i++)
                     {
                         if (abs(recvbuf[i] - (i & and_v) * allreduce_procn) > 0.0001)
-                        // if (abs(recvbuf[i] - allreduce_procn) > 0.0001)
+                        // if (abs(recvbuf[i] - 2.0 * allreduce_procn) > 0.0001)
                         {
-                            printf("结果错误X grank=%d i=%d re=%f\n", allreduce_rank, i, sendbuf[i]);
+                            printf("结果错误X count=%d sz=%d grank=%d i=%d re=%f sb=%f\n", count, count * sizeof(float), allreduce_rank, i, recvbuf[i], sendbuf[i]);
                             fflush(stdout);
                             exit(0);
                         }
@@ -79,10 +84,12 @@ int main()
                 // }
                 MPI_Barrier(MPI_COMM_WORLD);
             }
-
+            int loopN = 120;
+            if (sz < 20)
+                loopN = 200;
+            // if (l == 0)
             {
                 //性能测试
-                int loopN = 200;
                 double totalT = 0.0;
                 for (int loop = 0; loop < loopN; loop++)
                 {
@@ -104,10 +111,10 @@ int main()
                     printf("PJT: size= %d time= %lf throughput=%lf GB/s\n", count * sizeof(float), Tim * 1e6, (count * sizeof(float) / (1.0E9 * Tim)) * allreduce_procn);
                 }
             }
+            // if (l == 1)
             if (0)
             {
                 //性能测试MPI
-                int loopN = 100;
                 double totalT = 0.0;
                 for (int loop = 0; loop < loopN; loop++)
                 {
