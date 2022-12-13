@@ -1,0 +1,11 @@
+#文件系统挂载
+alias ssh='/usr/bin/nss_yhpc_ssh'
+list=cn[3360-3487]
+clush -w $list "mkdir /vol8"
+clush -w $list "mount.lustre -t lustre -o localflock 12.4.2.7@tcp:/CSFS /vol8"
+
+#mt驱动卸载
+clush -w $list "modprobe -r mt"
+clush -w cn[a-b] "modprobe mt"
+
+cn[8288,8396,8644,8670-8671,8721,8861,8883,8965-8976,8978-8986,9013,9066,9313,9326,9441,9489,9529-9530,9534,9600,9624,9689,9725,9877,9894,9939]
