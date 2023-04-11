@@ -1,0 +1,503 @@
+#include <iostream>
+#include <unistd.h>
+#include <algorithm>
+#define _GNU_SOURCE
+#include <stdlib.h>
+#include "yhccl_contexts.h"
+#include "yhccl_allreduce.h"
+#include "yhccl_options.h"
+
+#ifdef PAPI
+#include <papi.h>
+//  Level 3 data cache reads, Level 3 data cache writes, Load instructions, Store instructions, Floating point add instructions
+#endif
+
+using namespace std;
+int main(int argc, char **argv)
+{
+	MPI_Init(&argc, &argv);
+	int allreduce_rank, allreduce_procn;
+	MPI_Comm_rank(MPI_COMM_WORLD, &allreduce_rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &allreduce_procn);
+	if (allreduce_rank == 0)
+	{
+		fprintf(stderr, "starts\n");
+	}
+	MPI_Barrier(MPI_COMM_WORLD);
+	pjtccl_contexts ccl_ctx;
+	ccl_ctx.init(MPI_COMM_WORLD);
+
+	if (allreduce_rank == 0)
+	{
+		fprintf(stderr, "init\n");
+	}
+	// float *sendbuf = new float[1 << 27];
+	// float *recvbuf = new float[1 << 27];
+
+	float *sendbuf;
+	float *recvbuf;
+	posix_memalign((void **)&sendbuf, 4096, (1 << 28));
+	posix_memalign((void **)&recvbuf, 4096, (1 << 28));
+	// pipelined_dpml_cache_efficient
+	MPI_Barrier(MPI_COMM_WORLD);
+#ifdef PAPI
+	int retval;
+	int eventn = 0;
+	retval = PAPI_library_init(PAPI_VER_CURRENT);
+	if (retval != PAPI_VER_CURRENT)
+	{
+		fprintf(stderr, "Error initializing PAPI! %s\n",
+				PAPI_strerror(retval));
+		return 0;
+	}
+	int eventset = PAPI_NULL;
+	// Creating an Eventset
+	retval = PAPI_create_eventset(&eventset);
+	if (retval != PAPI_OK)
+	{
+		fprintf(stderr, "Error creating eventset! %s\n",
+				PAPI_strerror(retval));
+	}
+	retval = PAPI_add_named_event(eventset, "PAPI_LD_INS");
+	if (retval != PAPI_OK)
+	{
+		if (0 == allreduce_rank)
+			fprintf(stderr, "Error adding PAPI_LD_INS: %s\n",
+					PAPI_strerror(retval));
+	}
+	else
+	{
+		eventn++;
+	}
+	retval = PAPI_add_named_event(eventset, "PAPI_SR_INS");
+	if (retval != PAPI_OK)
+	{
+		if (0 == allreduce_rank)
+			fprintf(stderr, "Error adding PAPI_SR_INS: %s\n",
+					PAPI_strerror(retval));
+	}
+	else
+	{
+		eventn++;
+	}
+	retval = PAPI_add_named_event(eventset, "PAPI_BR_INS");
+	if (retval != PAPI_OK)
+	{
+		if (0 == allreduce_rank)
+			fprintf(stderr, "Error adding PAPI_BR_INS: %s\n",
+					PAPI_strerror(retval));
+	}
+	else
+	{
+		eventn++;
+	}
+
+	retval = PAPI_add_named_event(eventset, "PAPI_TOT_INS");
+	if (retval != PAPI_OK)
+	{
+		if (0 == allreduce_rank)
+			fprintf(stderr, "Error adding PAPI_TOT_INS: %s\n",
+					PAPI_strerror(retval));
+	}
+	else
+	{
+		eventn++;
+	}
+
+	retval = PAPI_add_named_event(eventset, "PAPI_FP_OPS");
+	if (retval != PAPI_OK)
+	{
+		if (0 == allreduce_rank)
+			fprintf(stderr, "Error adding PAPI_FP_OPS: %s\n",
+					PAPI_strerror(retval));
+	}
+	else
+	{
+		eventn++;
+	}
+
+	retval = PAPI_add_named_event(eventset, "PAPI_L3_TCA");
+	if (retval != PAPI_OK)
+	{
+		if (0 == allreduce_rank)
+			fprintf(stderr, "Error adding PAPI_L3_TCA: %s\n",
+					PAPI_strerror(retval));
+	}
+	else
+	{
+		eventn++;
+	}
+
+	retval = PAPI_add_named_event(eventset, "PAPI_L3_TCM");
+	if (retval != PAPI_OK)
+	{
+		if (0 == allreduce_rank)
+			fprintf(stderr, "Error adding PAPI_L3_TCM: %s\n",
+					PAPI_strerror(retval));
+	}
+	else
+	{
+		eventn++;
+	}
+
+#endif
+	int pjtn=8;
+	//NX系统
+	for (int intra_slice = 18; intra_slice <= 18; intra_slice += 1)
+		// l表示节点间片的比例大小1
+
+		for (int l = 0 ;l <= 0; l += 1)
+			// pjt表示测试模式111
+			for (int pjt = 4; pjt <= 4; pjt += 1)
+			{
+				if (ccl_ctx._ctxp->global_rank == 0)
+					fprintf(stderr, "-----------all-reduce---------pjt=%d--l=%d---procn=%d---intra_slice=%d-------------------------------\n", pjt, l, allreduce_procn, intra_slice);
+				fflush(stdout);
+				// sz表示数据数量1
+				for (int sz = 26; sz <= 26; sz += 6)
+				{
+					ccl_ctx._ctxp->_opt.inter_node_slice_ct_ratio = 1;
+					if (sz < 19)
+						ccl_ctx._ctxp->_opt.inter_node_slice_ct_ratio = 8;
+					else
+						ccl_ctx._ctxp->_opt.inter_node_slice_ct_ratio = 4;
+					switch (l)
+					{
+					case 0:
+						ccl_ctx._ctxp->_opt.inter_node_slice_ct_ratio = 1;
+						break;
+					case 1:
+						ccl_ctx._ctxp->_opt.inter_node_slice_ct_ratio = 2;
+						break;
+					case 2:
+						ccl_ctx._ctxp->_opt.inter_node_slice_ct_ratio = 4;
+						break;
+					case 3:
+						ccl_ctx._ctxp->_opt.inter_node_slice_ct_ratio = 8;
+						break;
+					case 4:
+						ccl_ctx._ctxp->_opt.inter_node_slice_ct_ratio = 16;
+						break;
+					case 5:
+						ccl_ctx._ctxp->_opt.inter_node_slice_ct_ratio = 32;
+						break;
+					case 6:
+						ccl_ctx._ctxp->_opt.inter_node_slice_ct_ratio = 64;
+						break;
+					default:
+						break;
+					}
+					ccl_ctx._ctxp->_opt.intra_node_sync_type = Atomic_as_sync;
+					ccl_ctx._ctxp->_opt.intra_node_reduce_byte_unit =  (1 << intra_slice);
+					ccl_ctx._ctxp->_opt.overlapping_inter_node_with_intra_node = true;
+					ccl_ctx._ctxp->_opt.intra_node_bcast_type = CacheEfficientBcast;
+					if (pjt == 0)
+					{
+						ccl_ctx._ctxp->_opt.dynamical_tune = true;
+						ccl_ctx._ctxp->_opt.mulit_leader_algorithm = PIPELINED_DPML;
+						ccl_ctx._ctxp->_opt.intra_node_reduce_type = CacheEfficient;
+						ccl_ctx._ctxp->_opt.overlapping_inter_node_with_intra_node = false;
+						ccl_ctx._ctxp->_opt.intra_node_bcast_type = MEMCPY;
+						ccl_ctx._ctxp->_opt.inter_node_algorithm = 1;
+						ccl_ctx._ctxp->_opt.core_per_numa = allreduce_procn;
+						ccl_ctx._ctxp->_opt.numa_n = 1;
+
+					}
+					else if (pjt == 1)
+					{
+						// continue;
+					ccl_ctx._ctxp->_opt.intra_node_reduce_byte_unit =  (1 << 14);
+						ccl_ctx._ctxp->_opt.mulit_leader_algorithm = INTEL_RG;
+						ccl_ctx._ctxp->_opt.core_per_numa = allreduce_procn;
+						ccl_ctx._ctxp->_opt.numa_n = 2;
+						ccl_ctx._ctxp->_opt.core_per_numa = allreduce_procn/2;
+						
+					}
+					else if (pjt == 2)
+					{
+						ccl_ctx._ctxp->_opt.mulit_leader_algorithm = RING_AR;
+					}
+					else if (pjt == 3)
+					{
+						ccl_ctx._ctxp->_opt.dynamical_tune = true;
+						ccl_ctx._ctxp->_opt.mulit_leader_algorithm = MEMORY_BANDWIDTH_EFFICIENT;
+						ccl_ctx._ctxp->_opt.intra_node_reduce_type = MemoryEfficient;
+						ccl_ctx._ctxp->_opt.overlapping_inter_node_with_intra_node = true;
+						ccl_ctx._ctxp->_opt.inter_node_algorithm = 1;
+						ccl_ctx._ctxp->_opt.pjt_inner_cpy = 1;
+						ccl_ctx._ctxp->_opt.using_non_temporal = 0;
+						ccl_ctx._ctxp->_opt.core_per_numa = allreduce_procn;
+						ccl_ctx._ctxp->_opt.numa_n = 1;
+					}
+					else if (pjt == 4)
+					{
+						ccl_ctx._ctxp->_opt.dynamical_tune = true;
+						ccl_ctx._ctxp->_opt.mulit_leader_algorithm = MEMORY_BANDWIDTH_EFFICIENT;
+						ccl_ctx._ctxp->_opt.intra_node_reduce_type = MemoryEfficient;
+						ccl_ctx._ctxp->_opt.overlapping_inter_node_with_intra_node = true;
+						ccl_ctx._ctxp->_opt.inter_node_algorithm = 1;
+						ccl_ctx._ctxp->_opt.pjt_inner_cpy = 1;
+						ccl_ctx._ctxp->_opt.using_non_temporal = 1;
+						ccl_ctx._ctxp->_opt.core_per_numa = allreduce_procn;
+						ccl_ctx._ctxp->_opt.numa_n = 1;
+					}
+					else if (pjt == 5)
+					{
+						ccl_ctx._ctxp->_opt.dynamical_tune = true;
+						ccl_ctx._ctxp->_opt.mulit_leader_algorithm = MEMORY_BANDWIDTH_EFFICIENT;
+						ccl_ctx._ctxp->_opt.intra_node_reduce_type = MemoryEfficient;
+						ccl_ctx._ctxp->_opt.overlapping_inter_node_with_intra_node = true;
+						ccl_ctx._ctxp->_opt.inter_node_algorithm = 1;
+						ccl_ctx._ctxp->_opt.pjt_inner_cpy = 1;
+						ccl_ctx._ctxp->_opt.using_non_temporal = 1;
+						ccl_ctx._ctxp->_opt.core_per_numa = allreduce_procn/2;
+						ccl_ctx._ctxp->_opt.numa_n = 2;
+					}else if(pjt == 6)
+					{
+						// continue;
+						ccl_ctx._ctxp->_opt.dynamical_tune = true;
+						ccl_ctx._ctxp->_opt.mulit_leader_algorithm = MEMORY_BANDWIDTH_EFFICIENT;
+						ccl_ctx._ctxp->_opt.intra_node_reduce_type = MemoryEfficient;
+						ccl_ctx._ctxp->_opt.overlapping_inter_node_with_intra_node = true;
+						ccl_ctx._ctxp->_opt.inter_node_algorithm = 1;
+						ccl_ctx._ctxp->_opt.pjt_inner_cpy = 1;
+						ccl_ctx._ctxp->_opt.using_non_temporal = 2;
+						ccl_ctx._ctxp->_opt.core_per_numa = allreduce_procn/2;
+						ccl_ctx._ctxp->_opt.numa_n = 2;
+						// continue;
+						// ccl_ctx._ctxp->_opt.mulit_leader_algorithm = RING_AR;1
+					}else if(pjt == 7)
+					{
+						// continue;
+						ccl_ctx._ctxp->_opt.dynamical_tune = true;
+						ccl_ctx._ctxp->_opt.mulit_leader_algorithm = MEMORY_BANDWIDTH_EFFICIENT;
+						ccl_ctx._ctxp->_opt.intra_node_reduce_type = MemoryEfficient;
+						ccl_ctx._ctxp->_opt.overlapping_inter_node_with_intra_node = true;
+						ccl_ctx._ctxp->_opt.inter_node_algorithm = 1;
+						ccl_ctx._ctxp->_opt.pjt_inner_cpy = 1;
+						ccl_ctx._ctxp->_opt.using_non_temporal = 3;
+						ccl_ctx._ctxp->_opt.core_per_numa = allreduce_procn/2;
+						ccl_ctx._ctxp->_opt.numa_n = 2;
+						// ccl_ctx._ctxp->_opt.mulit_leader_algorithm = RING_AR;
+					}
+
+					// PIPELINED_DPML;
+					ccl_ctx._ctxp->_opt.inter_node_allreduce_type = MPIALLREDUCE;
+					ccl_ctx._ctxp->_opt.open_inter_node_communication = 2;
+					ccl_ctx._ctxp->_opt.open_intra_node_communication = 1;
+					int count = (1<<sz);
+					int loopN = 20000;
+					if (sz >= 16)
+						loopN = 8000;
+					if (sz >= 20)
+						loopN =800;
+					if (sz >= 22)
+						loopN = 100;
+					if (sz >= 26)
+						loopN = 40;
+					loopN/=2;
+					loopN+=10;
+					// loopN+=16;
+					// if(allreduce_procn <16) loopN*=4;
+					int warmup = loopN/10;
+					// loopN*=50;
+					//正确性测试
+					int corrention_check =0;
+					if (pjt < pjtn)
+					{
+						//  if (0)
+
+						{
+							for (int loop = 2; loop <warmup; loop++)
+							{
+								// int and_v = 13 + loop;
+								int and_v = 1 + loop;
+								for (int i = 0; i < count; i++)
+									if(corrention_check){
+										sendbuf[i] = i % loop + i % and_v;
+										// sendbuf[i] = 1.0;
+										// recvbuf[i] = loop + i % and_v;
+									}
+									else
+										sendbuf[i] = 0.0;
+								yhccl_allreduce(sendbuf, recvbuf, count, MPI_FLOAT, MPI_SUM, 0);
+								// MPI_Barrier(MPI_COMM_WORLD);
+								// ffprintf(stderr,stderr,"rank=%d 最终结果=%f\n", allreduce_rank, recvbuf[0]);
+								for (int i = 0; i < count; i++)
+								{
+									if (corrention_check)
+										if (abs(recvbuf[i] - (i % loop + i % and_v) * allreduce_procn) > 0.0001)
+										// if (abs(recvbuf[i] - (1.0) * allreduce_procn) > 0.0001)
+										{
+											fprintf(stderr, "loop=%d 结果错误X count=%d sz=%d grank=%d i=%d re=%f sb=%f addr=%p\n",
+													loop, count, count * sizeof(float), allreduce_rank, i, recvbuf[i], sendbuf[i], &(recvbuf[i]));
+											fflush(stdout);
+											exit(0);
+										}
+								}
+								MPI_Barrier(MPI_COMM_WORLD);
+								// exit(0);
+								MPI_Barrier(MPI_COMM_WORLD);
+							}
+								// if (allreduce_rank == 0 && corrention_check)
+								// {
+								//     fprintf(stderr, "正确性检查通过1 count=%d\n", count);
+								// }
+						}
+						if (corrention_check == 1)
+							loopN = 10;
+
+						{
+							//性能测试1
+							double totalT = 0.0;
+							for (int loop = 1; loop <warmup; loop++)
+							yhccl_allreduce(sendbuf, recvbuf, count, MPI_FLOAT, MPI_SUM, 0);
+							// yhccl_allreduce(sendbuf, recvbuf, count, MPI_FLOAT, MPI_SUM, 0);
+							// yhccl_allreduce(sendbuf, recvbuf, count, MPI_FLOAT, MPI_SUM, 0);
+
+#ifdef PAPI
+							long long papi_count[eventn];
+							PAPI_reset(eventset);
+							retval = PAPI_start(eventset);
+							if (retval != PAPI_OK)
+							{
+								fprintf(stderr, "Error starting CUDA: %s\n",
+										PAPI_strerror(retval));
+							}
+#endif
+							for (int loop = 0; loop < loopN; loop++)
+							{
+								double startT = MPI_Wtime();;
+								yhccl_allreduce(sendbuf, recvbuf, count, MPI_FLOAT, MPI_SUM, 0);
+								totalT += MPI_Wtime() - startT;
+								// MPI_Barrier(MPI_COMM_WORLD);
+								// if (allreduce_rank == 0 && loop % 10 == 0)
+								//     fprintf(stderr,"loop=%d\n", loop);
+								// fflush(stdout);
+								MPI_Barrier(MPI_COMM_WORLD);
+								// for (int i = 0; i < count; i++)
+								// {
+								// 	recvbuf[i] = 0.0;
+								// 	sendbuf[i] = 0.0;
+								// }
+								MPI_Barrier(MPI_COMM_WORLD);
+							}
+#ifdef PAPI
+							retval = PAPI_stop(eventset, papi_count);
+							if (retval != PAPI_OK)
+							{
+								fprintf(stderr, "Error stopping:  %s\n",
+										PAPI_strerror(retval));
+							}
+							else
+							{
+								MPI_Allreduce(MPI_IN_PLACE, papi_count, eventn, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);
+								if (allreduce_rank == 0)
+								{
+									// puts("================PAPI================");
+									for (int i = 0; i < eventn; i++)
+									{
+										fprintf(stderr, "%lld ", papi_count[i] / loopN);
+									}
+								}
+							}
+#endif
+							totalT /= loopN;
+							// for(int i = 0;i<yhccl_contexts::_ctx->inter_node_procn;i++)
+							// {
+							// 	if (yhccl_contexts::_ctx->intra_node_rank == 0 && yhccl_contexts::_ctx->inter_node_rank == i)
+							// 	{
+							// 		fprintf(stderr, " %s %lf \n", yhccl_contexts::_ctx->host_name, totalT);
+							// 	}
+							// 	// MPI_Barrier(MPI_COMM_WORLD);
+							// }
+							double Tim = 0.0;
+							MPI_Reduce(&totalT, &Tim, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+							double SumT = 0.0;
+							MPI_Reduce(&totalT, &SumT, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+							SumT /= allreduce_procn;
+							if (allreduce_rank == 0)
+							{
+								// fprintf(stderr, "%lf\n", SumT * 1e6);
+								fprintf(stderr, "PJT: size= %d time= %lf throughput=%lf GB/s\n", 
+								count * sizeof(float), SumT * 1e6, (count * sizeof(float) / ((1UL << 30) * SumT)) * allreduce_procn);
+								fflush(stderr);
+							}
+						}
+					}
+					else
+					{
+						//性能测试MPI
+						double totalT = 0.0;
+							for (int loop = 1; loop <warmup; loop++)
+						MPI_Allreduce(sendbuf, recvbuf, count, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+						// MPI_Reduce_scatter_block(sendbuf, recvbuf, count / allreduce_procn, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+						// MPI_Reduce_scatter_block(sendbuf, recvbuf, count / allreduce_procn, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+						// MPI_Reduce_scatter_block(sendbuf, recvbuf, count / allreduce_procn, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+#ifdef PAPI
+						long long papi_count[eventn];
+						PAPI_reset(eventset);
+						retval = PAPI_start(eventset);
+						if (retval != PAPI_OK)
+						{
+							fprintf(stderr, "Error starting CUDA: %s\n",
+									PAPI_strerror(retval));
+						}
+#endif
+						for (int loop = 0; loop < loopN; loop++)
+						{
+							double startT = MPI_Wtime();
+							MPI_Allreduce(sendbuf, recvbuf, count, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+						// MPI_Reduce_scatter_block(sendbuf, recvbuf, count / allreduce_procn, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+							// yhccl_allreduce(sendbuf, recvbuf, count, MPI_FLOAT, MPI_SUM, 0);
+							totalT += MPI_Wtime() - startT;
+							MPI_Barrier(MPI_COMM_WORLD);
+								for (int i = 0; i < count; i++)
+								{
+									recvbuf[i] = 0.0;
+									sendbuf[i] = 0.0;
+								}
+							MPI_Barrier(MPI_COMM_WORLD);
+							// if (allreduce_rank == 0)
+							//     fprintf(stderr, "loop=%d\n", loop);
+							// fflush(stdout);
+						}
+#ifdef PAPI
+						retval = PAPI_stop(eventset, papi_count);
+						if (retval != PAPI_OK)
+						{
+							fprintf(stderr, "Error stopping:  %s\n",
+									PAPI_strerror(retval));
+						}
+						else
+						{
+							MPI_Allreduce(MPI_IN_PLACE, papi_count, eventn, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);
+							if (allreduce_rank == 0)
+							{
+								// puts("================PAPI================");
+								for (int i = 0; i < eventn; i++)
+								{
+									fprintf(stderr, "%lld ", papi_count[i] / loopN);
+								}
+							}
+						}
+#endif
+						totalT /= loopN;
+						double Tim = 0.0;
+						MPI_Reduce(&totalT, &Tim, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+						double SumT = 0.0;
+						MPI_Reduce(&totalT, &SumT, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+						SumT /= allreduce_procn;
+						if (allreduce_rank == 0)
+						{
+							// fprintf(stderr, "%lf\n", SumT * 1e6);
+							fprintf(stderr, "MPI: size= %d time= %lf throughput=%lf GB/s\n", count * sizeof(float), SumT * 1e6, (count * sizeof(float) / ((1UL << 30) * SumT)) * allreduce_procn);
+						}
+						fflush(stdout);
+					}
+				}
+			}
+	ccl_ctx.destroy();
+	MPI_Barrier(MPI_COMM_WORLD);
+	MPI_Finalize();
+}
